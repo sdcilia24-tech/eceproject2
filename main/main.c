@@ -8,17 +8,17 @@
 
 // difference between the last project, enable the pulldown 
 
-#define ignitionLED 8   
+#define ignitionLED 13  
 #define engineLED 3     
 #define ignitionEn 37
 #define driverSeatBelt 38
 #define passSeatBelt 39
 #define driveSeat 40
 #define passSeat 41
-    #define Alarm 18
-
+#define Alarm 18
+    
 //New components defined below 
-#define headLights 17
+#define headLights 14
 #define highBeamsOut 16
 #define highBeamsIn 15
 #define photoResistor ADC_CHANNEL_4
@@ -31,23 +31,26 @@ bool dsbelt = false;
 bool pSense = false;
 bool psbelt = false;
 
-// Define the handlers Globally to functionize the configuration
-adc_oneshot_unit_handle_t oneShotHandler; 
-adc_cali_handle_t adcPotentiometerHandler; 
-adc_cali_handle_t adcPhotoResistorHandler;     
+// Define the handlers Globally to functionize the configuration, there is also a variable called
+
+// NTS
+// "volatile" that people recommend using instead of ust a plain global variable.
+// (thread talks about ISR handlers, but same concept)
+//source https://stackoverflow.com/questions/27204242/how-to-avoid-global-variables-when-using-interrupt-handlers
+static adc_oneshot_unit_handle_t oneShotHandler; 
+static adc_cali_handle_t adcPotentiometerHandler; 
+static adc_cali_handle_t adcPhotoResistorHandler;     
 
 /**
  * Defines a debouncing function that will return the value of the button input after a delay of 25MS
  */
 
-bool debounce(bool buttonInput){
-   bool button = gpio_get_level(buttonInput);
-   if (button){
+bool debounce(int buttonInput){
+    int button = gpio_get_level(buttonInput);
     vTaskDelay(25/ portTICK_PERIOD_MS);
-    bool new = gpio_get_level(buttonInput);
-    if (new){
-        return true;
-    }
+    int new = gpio_get_level(buttonInput);
+    if (new == button){
+        return new;
     }
     return false;
 }
@@ -106,7 +109,7 @@ void pinConfig(void){
     gpio_set_direction(engineLED, GPIO_MODE_OUTPUT);
     gpio_set_direction(Alarm, GPIO_MODE_OUTPUT);
     gpio_set_direction(highBeamsOut, GPIO_MODE_OUTPUT);
-    gpio_set_direction(headLights, GPIO_MODE_OUTPUT);
+    gpio_set_direction(headLights, GPIO_MODE_INPUT_OUTPUT);
 
     gpio_set_direction(highBeamsIn, GPIO_MODE_INPUT);
     gpio_set_direction(ignitionEn, GPIO_MODE_INPUT);
@@ -166,15 +169,16 @@ void adcConfig(void){
  * (nts: photoresistor increases conductivity with darkness, for above 55 is daylight below nighttime )
  */
  void lightSense(int adcMV){
-    if (adcMV > 1000){
+    bool onChecker = gpio_get_level(headLights);
+    if (adcMV > 250 && onChecker){
         vTaskDelay(2000 / portTICK_PERIOD_MS);
         gpio_set_level(headLights, 0);
     }
-    else if (adcMV < 700){
+    if (adcMV < 150 && !onChecker){
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         gpio_set_level(headLights, 1);
     }
-        else{
+    else{
         return;
     }
     }
@@ -187,7 +191,6 @@ int photoResistorRead(void){
     int adcMVPhoto;
     adc_oneshot_read(oneShotHandler, photoResistor, &adcBitsPhoto);
     adc_cali_raw_to_voltage(adcPhotoResistorHandler, adcBitsPhoto, &adcMVPhoto); 
-    printf("%d photo", adcMVPhoto);
     return adcMVPhoto;
 
 }
@@ -198,12 +201,11 @@ int photoResistorRead(void){
  */
 
 int potentiometerRead(void){
-int adcBitsPoten = 0;
-int adcMVPoten = 0;
-adc_oneshot_read(oneShotHandler, poteniometer, &adcBitsPoten);
-adc_cali_raw_to_voltage(adcPotentiometerHandler, adcBitsPoten, &adcMVPoten); 
-printf("%d poten", adcMVPoten);
-return adcMVPoten;
+    int adcBitsPoten;
+    int adcMVPoten;
+    adc_oneshot_read(oneShotHandler, poteniometer, &adcBitsPoten);
+    adc_cali_raw_to_voltage(adcPotentiometerHandler, adcBitsPoten, &adcMVPoten); 
+    return adcMVPoten;
 }
 
 /**
@@ -213,10 +215,10 @@ return adcMVPoten;
  * 2 = AUTO
  */
 int headlightSelection(int adcMV){
-    if (adcMV <= 1100){
+    if (adcMV < 1100){
         return 0;
     }
-    else if (adcMV <= 1800){
+    else if (adcMV < 1800){
         return 1;
     }
     else{
@@ -230,10 +232,17 @@ void app_main(void) {
     bool initial_message = true;
     bool engineRunning = false;
     while(1){
+       // printf("iamworking!\n");
         bool ignitEn = debounce(ignitionEn);
         bool ready = IgnitionReady();
         int headlightLevel = headlightSelection(potentiometerRead());
         int photoRead = photoResistorRead();
+        // printf("%d\n", photoRead);
+        // printf("%d\n", headlightLevel);
+        // printf("%d\n", ready);
+        // printf("%d\n", ignitEn);
+        //printf("%d\n", gpio_get_level(headLights));
+
     
         if (dSense && initial_message){
             printf("Welcome to enhanced Alarm system model 218 -W25\n");
@@ -257,14 +266,9 @@ void app_main(void) {
         }
         else{gpio_set_level(highBeamsOut, 0);}
             
-
         if(ready){
             gpio_set_level(ignitionLED, 1);
         }
-        else {
-            gpio_set_level(ignitionLED, 0);
-        }
-
 
         if(ignitEn){
             if (engineRunning){
@@ -274,7 +278,7 @@ void app_main(void) {
             gpio_set_level(highBeamsOut, 0);
             engineRunning = false;
             }
-            else if (ready) {
+            if (ready) {
                 engineRunning = true;
                 printf("engine starting...\n");
                 gpio_set_level(ignitionLED, 0);
@@ -296,7 +300,7 @@ void app_main(void) {
                 if (!psbelt){
                     printf("Passenger seatbelt not fastened\n");
                 }
-                vTaskDelay (3000/ portTICK_PERIOD_MS);
+                vTaskDelay (500/ portTICK_PERIOD_MS);
             }
         }
         else {
