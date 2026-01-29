@@ -231,6 +231,7 @@ void app_main(void) {
     adcConfig();
     bool initial_message = true;
     bool engineRunning = false;
+    bool killEngine = false;
     while(1){
        // printf("iamworking!\n");
         bool ignitEn = debounce(ignitionEn);
@@ -281,15 +282,16 @@ void app_main(void) {
             gpio_set_level(headLights, 0);
             gpio_set_level(highBeamsOut, 0);
             engineRunning = false;
-            continue;
+            killEngine = true;
             }
             if (ready) {
                 engineRunning = true;
+                killEngine = false;
                 printf("engine starting...\n");
                 gpio_set_level(ignitionLED, 0);
                 gpio_set_level(engineLED, 1);
             }
-            if (!engineRunning){
+            if (!engineRunning && !killEngine){
                 gpio_set_level(Alarm, 1);
                 if (!dSense){
                     printf("Driver seat not occupied\n");
