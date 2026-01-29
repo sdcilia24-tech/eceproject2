@@ -8,7 +8,7 @@
 
 // difference between the last project, enable the pulldown 
 
-#define ignitionLED 13  
+#define ignitionLED 13
 #define engineLED 3     
 #define ignitionEn 37
 #define driverSeatBelt 38
@@ -170,11 +170,11 @@ void adcConfig(void){
  */
  void lightSense(int adcMV){
     bool onChecker = gpio_get_level(headLights);
-    if (adcMV > 250 && onChecker){
+    if (adcMV > 100 && onChecker){
         vTaskDelay(2000 / portTICK_PERIOD_MS);
         gpio_set_level(headLights, 0);
     }
-    if (adcMV < 150 && !onChecker){
+    if (adcMV < 50 && !onChecker){
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         gpio_set_level(headLights, 1);
     }
@@ -242,6 +242,7 @@ void app_main(void) {
         // printf("%d\n", ready);
         // printf("%d\n", ignitEn);
         //printf("%d\n", gpio_get_level(headLights));
+        //printf("%d\n", ready);
 
     
         if (dSense && initial_message){
@@ -253,11 +254,11 @@ void app_main(void) {
             gpio_set_level(headLights, 0);
         }
 
-        if (headlightLevel == 1){
+        if (headlightLevel == 1 && engineRunning){
             gpio_set_level(headLights, 1);
 
         }
-        if (headlightLevel == 2){
+        if (headlightLevel == 2 && engineRunning){
             lightSense(photoRead);
         }
 
@@ -265,18 +266,22 @@ void app_main(void) {
             gpio_set_level(highBeamsOut, 1);
         }
         else{gpio_set_level(highBeamsOut, 0);}
-            
-        if(ready){
+
+        if (ready && !engineRunning){
             gpio_set_level(ignitionLED, 1);
         }
+        else{gpio_set_level(ignitionLED, 0);}
+    
 
         if(ignitEn){
+            vTaskDelay (25 / portTICK_PERIOD_MS);
             if (engineRunning){
             printf("engine stopping...\n");
             gpio_set_level(engineLED, 0);
             gpio_set_level(headLights, 0);
             gpio_set_level(highBeamsOut, 0);
             engineRunning = false;
+            continue;
             }
             if (ready) {
                 engineRunning = true;
@@ -284,8 +289,8 @@ void app_main(void) {
                 gpio_set_level(ignitionLED, 0);
                 gpio_set_level(engineLED, 1);
             }
-            else{
-                gpio_set_level (Alarm, 1);
+            if (!engineRunning){
+                gpio_set_level(Alarm, 1);
                 if (!dSense){
                     printf("Driver seat not occupied\n");
                 }
@@ -300,7 +305,7 @@ void app_main(void) {
                 if (!psbelt){
                     printf("Passenger seatbelt not fastened\n");
                 }
-                vTaskDelay (500/ portTICK_PERIOD_MS);
+                vTaskDelay (2000/ portTICK_PERIOD_MS);
             }
         }
         else {
