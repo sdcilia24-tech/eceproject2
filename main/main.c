@@ -15,7 +15,7 @@
 #define passSeatBelt 39
 #define driveSeat 40
 #define passSeat 41
-#define Alarm 18
+    #define Alarm 18
 
 //New components defined below 
 #define headLights 17
@@ -30,6 +30,11 @@ bool dSense = false;
 bool dsbelt = false;
 bool pSense = false;
 bool psbelt = false;
+
+// Define the handlers Globally to functionize the configuration
+adc_oneshot_unit_handle_t oneShotHandler; 
+adc_cali_handle_t adcPotentiometerHandler; 
+adc_cali_handle_t adcPhotoResistorHandler;     
 
 /**
  * Defines a debouncing function that will return the value of the button input after a delay of 25MS
@@ -95,11 +100,13 @@ void pinConfig(void){
     gpio_reset_pin(Alarm);
     gpio_reset_pin(highBeamsIn);
     gpio_reset_pin(highBeamsOut);
+    gpio_reset_pin(headLights);
 
     gpio_set_direction(ignitionLED, GPIO_MODE_OUTPUT);
     gpio_set_direction(engineLED, GPIO_MODE_OUTPUT);
     gpio_set_direction(Alarm, GPIO_MODE_OUTPUT);
     gpio_set_direction(highBeamsOut, GPIO_MODE_OUTPUT);
+    gpio_set_direction(headLights, GPIO_MODE_OUTPUT);
 
     gpio_set_direction(highBeamsIn, GPIO_MODE_INPUT);
     gpio_set_direction(ignitionEn, GPIO_MODE_INPUT);
@@ -124,16 +131,51 @@ void pinConfig(void){
 }
 
 /**
+ * defines a function that will configure the adc conversion within the system
+ */
+void adcConfig(void){
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT_1,
+    };
+    adc_oneshot_new_unit(&init_config1, &oneShotHandler);
+     adc_oneshot_chan_cfg_t config = {
+        .atten = adcAtten,
+        .bitwidth = bitWidth
+    };
+    adc_oneshot_config_channel(oneShotHandler, photoResistor, &config);
+    adc_oneshot_config_channel(oneShotHandler, poteniometer, &config);
+
+    adc_cali_curve_fitting_config_t caliPhotoConfig = {
+        .unit_id = ADC_UNIT_1,
+        .chan = photoResistor,
+        .atten = adcAtten,
+        .bitwidth = bitWidth
+    };
+        adc_cali_curve_fitting_config_t caliPotenConfig = {
+        .unit_id = ADC_UNIT_1,
+        .chan = poteniometer,
+        .atten = adcAtten,
+        .bitwidth = bitWidth
+    };
+    adc_cali_create_scheme_curve_fitting(&caliPhotoConfig, &adcPhotoResistorHandler);
+    adc_cali_create_scheme_curve_fitting(&caliPotenConfig, &adcPotentiometerHandler);
+}
+/**
  * defines a function that will change the settings of the headlights based on the amount of light, if the user has the auto headlights
  * enabled
  * (nts: photoresistor increases conductivity with darkness, for above 55 is daylight below nighttime )
  */
  void lightSense(int adcMV){
-    if (adcMV > 55){
+    if (adcMV > 1000){
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        gpio_set_level(headLights, 0);
+    }
+    else if (adcMV < 700){
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         gpio_set_level(headLights, 1);
     }
-    else{
-        gpio_set_level(headLights, 0);
+        else{
+        return;
     }
     }
 
@@ -143,28 +185,11 @@ void pinConfig(void){
 int photoResistorRead(void){
     int adcBitsPhoto;
     int adcMVPhoto;
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-    };
-    adc_oneshot_unit_handle_t adc1_handle;              
-    adc_oneshot_new_unit(&init_config1, &adc1_handle);  
-
-    adc_oneshot_chan_cfg_t config = {
-        .atten = adcAtten,
-        .bitwidth = bitWidth
-    };  
-    adc_oneshot_config_channel(adc1_handle, photoResistor, &config);
-        adc_cali_curve_fitting_config_t cali_config = {
-        .unit_id = ADC_UNIT_1,
-        .chan = photoResistor,
-        .atten = adcAtten,
-        .bitwidth = bitWidth
-    };  
-    adc_cali_handle_t adc1_cali_chan_handle;            
-    adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_chan_handle);
-    adc_oneshot_read(adc1_handle, photoResistor, &adcBitsPhoto);
-    adc_cali_raw_to_voltage(adc1_cali_chan_handle, adcBitsPhoto, &adcMVPhoto); 
+    adc_oneshot_read(oneShotHandler, photoResistor, &adcBitsPhoto);
+    adc_cali_raw_to_voltage(adcPhotoResistorHandler, adcBitsPhoto, &adcMVPhoto); 
+    printf("%d photo", adcMVPhoto);
     return adcMVPhoto;
+
 }
 
 
@@ -173,32 +198,12 @@ int photoResistorRead(void){
  */
 
 int potentiometerRead(void){
-    int adcBitsPoten = 0;
-    int adcMVPoten = 0;
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-    };
-    adc_oneshot_unit_handle_t adc1_handle;              
-    adc_oneshot_new_unit(&init_config1, &adc1_handle);  
-
-    adc_oneshot_chan_cfg_t config = {
-        .atten = adcAtten,
-        .bitwidth = bitWidth
-    };  
-    adc_oneshot_config_channel(adc1_handle, poteniometer, &config);
-        adc_cali_curve_fitting_config_t cali_config = {
-        .unit_id = ADC_UNIT_1,
-        .chan = poteniometer,
-        .atten = adcAtten,
-        .bitwidth = bitWidth
-    };  
-
-    adc_cali_handle_t adc1_cali_chan_handle;            
-    adc_cali_create_scheme_curve_fitting(&cali_config, &adc1_cali_chan_handle);
-
-    adc_oneshot_read(adc1_handle, poteniometer, &adcBitsPoten);
-    adc_cali_raw_to_voltage(adc1_cali_chan_handle, adcBitsPoten, &adcMVPoten); 
-    return adcMVPoten;
+int adcBitsPoten = 0;
+int adcMVPoten = 0;
+adc_oneshot_read(oneShotHandler, poteniometer, &adcBitsPoten);
+adc_cali_raw_to_voltage(adcPotentiometerHandler, adcBitsPoten, &adcMVPoten); 
+printf("%d poten", adcMVPoten);
+return adcMVPoten;
 }
 
 /**
@@ -211,7 +216,7 @@ int headlightSelection(int adcMV){
     if (adcMV <= 1100){
         return 0;
     }
-    else if (adcMV <= 2200){
+    else if (adcMV <= 1800){
         return 1;
     }
     else{
@@ -221,6 +226,7 @@ int headlightSelection(int adcMV){
 }
 void app_main(void) {
     pinConfig();
+    adcConfig();
     bool initial_message = true;
     bool engineRunning = false;
     while(1){
@@ -242,13 +248,14 @@ void app_main(void) {
             gpio_set_level(headLights, 1);
 
         }
-        else{
+        if (headlightLevel == 2){
             lightSense(photoRead);
         }
 
-        if (!gpio_get_level(headLights)){
-            gpio_set_level(highBeamsOut, 0);
+        if (gpio_get_level(headLights) && gpio_get_level(highBeamsIn)){
+            gpio_set_level(highBeamsOut, 1);
         }
+        else{gpio_set_level(highBeamsOut, 0);}
             
 
         if(ready){
@@ -258,22 +265,21 @@ void app_main(void) {
             gpio_set_level(ignitionLED, 0);
         }
 
-        if (ignitEn && engineRunning){
+
+        if(ignitEn){
+            if (engineRunning){
             printf("engine stopping...\n");
             gpio_set_level(engineLED, 0);
             gpio_set_level(headLights, 0);
             gpio_set_level(highBeamsOut, 0);
             engineRunning = false;
-        }
-
-        if(ignitEn){
-            if (ready) {
+            }
+            else if (ready) {
                 engineRunning = true;
                 printf("engine starting...\n");
                 gpio_set_level(ignitionLED, 0);
                 gpio_set_level(engineLED, 1);
             }
-
             else{
                 gpio_set_level (Alarm, 1);
                 if (!dSense){
