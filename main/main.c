@@ -31,10 +31,9 @@ bool dsbelt = false;
 bool pSense = false;
 bool psbelt = false;
 
+//NTS
 // Define the handlers Globally to functionize the configuration, there is also a variable called
-
-// NTS
-// "volatile" that people recommend using instead of ust a plain global variable.
+// "volatile" that people recommend using instead of just a plain global variable.
 // (thread talks about ISR handlers, but same concept)
 //source https://stackoverflow.com/questions/27204242/how-to-avoid-global-variables-when-using-interrupt-handlers
 static adc_oneshot_unit_handle_t oneShotHandler; 
